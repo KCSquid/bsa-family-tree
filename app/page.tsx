@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 class Person {
@@ -17,10 +18,16 @@ class Person {
 function Node({ person }: { person: Person }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="px-4 py-1 rounded-xs max-w-32 bg-neutral-100 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700 border relative z-10">
-        <span className="absolute rounded-full bg-yellow-50 dark:bg-purple-950 border border-yellow-300 dark:border-purple-700 size-6 top-0 right-0 -mr-2.5 -mt-2.5 flex items-center justify-center text-center font-medium text-xs">
-          {person.year}
-        </span>
+      <div
+        className={`px-4 py-1 rounded-xs max-w-32 transition-colors duration-200 bg-neutral-100 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700 border relative z-10 ${person.name.includes("🐐") ? "hover:bg-purple-300 dark:hover:bg-purple-950" : ""}`}
+      >
+        {person.year ? (
+          <span className="absolute rounded-full bg-yellow-50 dark:bg-purple-950 border border-yellow-300 dark:border-purple-700 size-6 top-0 right-0 -mr-2.5 -mt-2.5 flex items-center justify-center text-center font-medium text-xs">
+            {person.year}
+          </span>
+        ) : (
+          ""
+        )}
         <p className="text-center">{person.name}</p>
       </div>
 
@@ -63,87 +70,70 @@ function Node({ person }: { person: Person }) {
   );
 }
 
+interface PersonJSON {
+  name: string;
+  age?: number;
+  year?: number;
+  children?: PersonJSON[];
+}
+
+function parseJSON(obj: PersonJSON): Person {
+  return new Person(
+    obj.name,
+    obj.age ?? obj.year ?? 0,
+    obj.children ? obj.children.map(parseJSON) : [],
+  );
+}
+
+function parseCSV(csv: string): Person[] {
+  const rows = csv.trim().split(/\r?\n/);
+  const header = rows[0].split(",");
+  const data = rows.slice(1).map((row) => {
+    const cols = row.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/);
+    const obj: Record<string, string> = {};
+    header.forEach((h, i) => {
+      obj[h.trim()] = cols[i]?.trim();
+    });
+    return obj;
+  });
+  const peopleMap: Record<string, Person> = {};
+  data.forEach((p) => {
+    peopleMap[p.name] = new Person(p.name, Number(p.age));
+  });
+  data.forEach((p) => {
+    if (p.parent && peopleMap[p.parent]) {
+      peopleMap[p.parent].children.push(peopleMap[p.name]);
+    }
+  });
+  return data.filter((p) => !p.parent).map((p) => peopleMap[p.name]);
+}
+
 export default function Home() {
-  const familyData = [
-    new Person("Danielle", 23, [
-      new Person("Angel", 24, [
-        new Person("Denessa", 25),
-        new Person("Maabena", 25, [
-          new Person("Direnzo", 26),
-          new Person("Xzavier", 26, [
-            new Person("Josh", 28, [
-              new Person("Zach", 29),
-              new Person("Sam", 29),
-            ]),
-          ]),
-          new Person("Halo", 27),
-          new Person("Ge'hailey", 27),
-          new Person("Christina", 26),
-          new Person("Jahvon", 27, [
-            new Person("Jonathan", 29, [
-              new Person("Kai", 30),
-              new Person("Kumar", 30),
-            ]),
-          ]),
-        ]),
-        new Person("Khandea", 25),
-        new Person("Krystal", 25),
-      ]),
-      new Person("Amelia", 24),
-    ]),
-    new Person("Ezekiel", 25),
-    new Person("Nana", 23),
-    new Person("Vasean", 23, [
-      new Person("Amir", 26),
-      new Person("Jayden H.", 25, [
-        new Person("Mudassar", 27, [new Person("Kyle", 27)]),
-        new Person("Kaiden", 27),
-      ]),
-    ]),
-    new Person("Jesse", 25, [
-      new Person("Kayden", 28),
-      new Person("Isaiah", 28),
-      new Person("Nate", 27, [
-        new Person("Paige", 28),
-        new Person("Mikael", 28),
-        new Person("Jacoho", 29),
-        new Person("Thurun", 29),
-        new Person("Salt", 29),
-      ]),
-    ]),
-    new Person("O'shane", 23, [
-      new Person("Toyeb", 25),
-      new Person("Antwon", 25),
-      new Person("Malik", 25),
-      new Person("Zyon", 25),
-      new Person("Jordan", 25, [
-        new Person("Josias", 27),
-        new Person("Elias", 27, [
-          new Person("Dylan", 28),
-          new Person("Mansoor", 28),
-          new Person("Josiah", 28),
-          new Person("Mueez", 28),
-          new Person("Ecclesia", 28),
-        ]),
-        new Person("Jahleel", 27),
-        new Person("Francais", 27),
-        new Person("Clifford", 27, [
-          new Person("Kai", 28),
-          new Person("Komal", 27),
-          new Person("Brendon", 28),
-        ]),
-      ]),
-    ]),
-    new Person("Jayden C.", 25),
-    new Person("Micaih", 23, [
-      new Person("Caleb", 23, [new Person("Jared", 26)]),
-    ]),
-    new Person("Jermadeen", 25, [
-      new Person("Brianna", 27),
-      new Person("Akeema", 27),
-      new Person("Dejanae", 26),
-    ]),
-  ];
+  const [ultraAncestors, setUltraAncestors] = useState<Person[]>([]);
+  const [familyData, setFamilyData] = useState<Person[]>([]);
+
+  useEffect(() => {
+    fetch("/family/ultraAncestors.csv")
+      .then((res) => res.text())
+      .then((csv) => {
+        setUltraAncestors(parseCSV(csv));
+      });
+
+    const parseMode = "csv";
+    if (parseMode === "json") {
+      fetch("/family/tree.json")
+        .then((res) => res.json())
+        .then((data) => {
+          setFamilyData(data.map(parseJSON));
+        });
+    } else if (parseMode === "csv") {
+      fetch("/family/tree.csv")
+        .then((res) => res.text())
+        .then((csv) => {
+          setFamilyData(parseCSV(csv));
+        });
+    }
+  }, []);
 
   return (
     <div className="w-screen h-screen bg-neutral-50 dark:bg-neutral-950 overflow-hidden font-sans text-black dark:text-white">
@@ -181,6 +171,22 @@ export default function Home() {
           wrapperClass="!w-screen !h-screen cursor-grab active:cursor-grabbing"
           contentClass="p-[500px]"
         >
+          <div className="flex flex-col items-center w-full pb-32 gap-8 mb-12">
+            <h2 className="text-sm font-semibold text-neutral-600 dark:text-neutral-400 uppercase tracking-wide">
+              Ultra Ancestors
+            </h2>
+
+            <div className="flex gap-16 items-end">
+              {ultraAncestors.map((person) => (
+                <Node key={person.name} person={person} />
+              ))}
+            </div>
+
+            <div className="relative w-full flex justify-center">
+              <div className="absolute h-px bg-neutral-300 dark:bg-neutral-700 w-2/3" />
+            </div>
+          </div>
+
           <div className="flex gap-20 items-start px-8">
             {familyData.map((person) => (
               <Node key={person.name} person={person} />
